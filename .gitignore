@@ -1,0 +1,45 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments and local env files
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Runtime logs and generated SIEM output
+*.log
+reports/*
+!reports/.gitkeep
+src/reports/
+tmp_reports/
+tmp_fix_probe/
+_codex_probe/
+DO_NOT_UPLOAD_LOCAL/
+
+# Large local model/download artifacts
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.crdownload
+custom-wazuh-model_gguf/*.gguf
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+
+# Keep personal VS Code preferences local. Remove this if you want to share them.
+.vscode/

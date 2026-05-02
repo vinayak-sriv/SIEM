@@ -1,0 +1,140 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# SIEM AI Agent — config.yaml
+# SRS Reference: §2.6 Design Constraints, §4.1 Performance Requirements
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Wazuh: Stage 1-3 of SRS §2.1 pipeline ─────────────────────────────────
+wazuh:
+  # Path to Wazuh Manager's live JSON alert stream (SRS §3.3 Database Interface)
+  # Default Wazuh path on Ubuntu Server:
+  alerts_json_path: /var/ossec/logs/alerts/alerts.json
+
+# ── Severity Filter: Stage 4 of SRS §2.1 pipeline ─────────────────────────
+filter:
+  # SRS §2.1 Pseudocode: IF alert.rule.level >= 10
+  # Wazuh levels: 10-11 Medium-High | 12-14 High | 15 Critical
+  min_severity_level: 10
+
+  # ── SRS I-05 Fix: Async Batch Settings ────────────────────────────────
+  # Alerts are queued until batch_size is reached OR flush_interval elapses
+  # SRS §4.1: "Middleware must process ≥ 60 high-severity alerts/hour"
+  # With batch_size=5 and flush_interval=3s → up to 100 alerts/hour capacity
+  batch_size              : 5     # flush when this many alerts are queued
+  flush_interval_seconds  : 3.0   # flush after this many seconds regardless
+  poll_interval_seconds   : 1.0   # how often to check alerts.json for new lines
+  dedupe_cache_size       : 10000 # max alert IDs kept for duplicate suppression
+  max_lines_per_poll      : 200   # drain bursts without reopening alerts.json per line
+
+  # Groups to suppress — prevents noisy low-value rules from consuming LLM
+  # SRS §2.3 SWOT: "Risk of false positives if rules are misconfigured"
+  ignore_groups:
+    - ossec          # internal Wazuh health checks — not security-relevant
+    # Add more groups here if specific rules are too noisy in your environment
+
+# ── Ollama / LLM: Stage 5 of SRS §2.1 pipeline ────────────────────────────
+# Demo topology:
+#   Wazuh + middleware + dashboard: Ubuntu VM (10.99.85.19)
+#   Ollama + TinyLlama           : Kali VM   (10.99.85.71)
+ollama:
+  base_url           : http://10.99.85.71:11434
+  model              : tinyllama      # selected for the 5.8 GB RAM Kali VM
+  # Alternatives (SRS §5 Model Selection):
+  #   llama3       — stronger quality if the VM has enough RAM
+  #   wazuh-soc    — custom model built from provided Modelfile
+  max_tokens         : 768
+  timeout_seconds    : 35
+  max_retries        : 2
+  max_concurrent_calls: 1   # low-RAM TinyLlama VM: collect in batches, generate serially
+  circuit_breaker_failures: 2
+  circuit_breaker_cooldown_seconds: 45
+
+# ── Output / Report Storage ────────────────────────────────────────────────
+# SRS §4.3 Audit Trail: "all alert data indexed with timestamps"
+output:
+  report_dir: ../reports  # enriched .md + master alerts_enriched.jsonl
+  write_markdown: true     # set false for high-volume replay; JSONL is always written
+
+# ── Notification Channels ──────────────────────────────────────────────────
+# SRS §4.3 Interoperability: "Wazuh supports Slack, PagerDuty integration"
+notifications:
+  # Keep empty for the faculty demo unless SMTP/Slack/Teams credentials are ready.
+  channels: []
+    # - email
+    # - slack     # uncomment to enable Slack
+    # - teams     # uncomment to enable Microsoft Teams
+
+  smtp:
+    enabled      : false   # enable after replacing the placeholder SMTP settings
+    host         : smtp.gmail.com   # replace with your org's SMTP server
+    port         : 587
+    use_tls      : true
+    from_address : siem-agent@yourdomain.com
+    username     : siem-agent@yourdomain.com
+    password     : YOUR_APP_PASSWORD   # or: export SMTP_PASSWORD=xxx
+
+  slack:
+    enabled     : false
+    webhook_url : https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    # or: export SLACK_WEBHOOK=https://...
+
+  teams:
+    enabled     : false
+    webhook_url : https://outlook.office.com/webhook/YOUR_WEBHOOK
+    # or: export TEAMS_WEBHOOK=https://...
+
+# ── Default Analyst ────────────────────────────────────────────────────────
+# Receives all alerts that don't match any routing rule below
+default_analyst:
+  name        : SOC Analyst (Default)
+  email       : soc@yourdomain.com
+  slack_user  : "@soc-analyst"
+
+# ── Analyst Routing Rules ──────────────────────────────────────────────────
+# Matched top-to-bottom. First match wins.
+# Supports rule group matching AND specific rule ID matching.
+# SRS §2.5 User Classes: SOC Analyst, System Administrator, Security Researcher
+routing_rules:
+
+  - name: SSH & Authentication Attacks
+    # SRS training data/demo: SSHD brute force / Hydra variants
+    groups: [authentication_failures, sshd]
+    rule_ids: [2502, 5710, 5712, 5720, 5763]
+    analyst:
+      name       : Linux Security Team
+      email      : linux-sec@yourdomain.com
+      slack_user : "@linux-sec"
+
+  - name: File Integrity Monitoring
+    # SRS training data: rule ID 40111 — /etc/shadow modified (level 13)
+    groups: [syscheck, fim, pci_dss_11.5]
+    rule_ids: [40111]
+    analyst:
+      name       : Integrity Monitoring Team
+      email      : integrity@yourdomain.com
+      slack_user : "@fim-team"
+
+  - name: Web Application Attacks
+    # SRS training data: rule ID 31103 — SQL injection (level 9)
+    groups: [web, accesslog, attack, sql_injection]
+    rule_ids: [31103]
+    analyst:
+      name       : AppSec Team
+      email      : appsec@yourdomain.com
+      slack_user : "@appsec"
+
+  - name: Windows Malware & Defender
+    # SRS training data: rule ID 60102 — Emotet Trojan (level 12)
+    groups: [windows, defender, malware]
+    rule_ids: [60102]
+    analyst:
+      name       : Windows Security Team
+      email      : windows-sec@yourdomain.com
+      slack_user : "@win-sec"
+
+  - name: Kali Linux Attack Simulation (Nmap / Hydra)
+    # SRS §1.3 Scope: "Attack Simulation via Kali Linux (Nmap, Hydra)"
+    groups: [recon, scan, attack_simulation]
+    analyst:
+      name       : Security Research Team
+      email      : research@yourdomain.com
+      slack_user : "@sec-research"
