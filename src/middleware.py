@@ -178,10 +178,6 @@ class PythonMiddleware:
 
         return Alert.from_wazuh_json(raw_dict)
 
-    def tailRead(self) -> Optional[Alert]:
-        """Backward-compatible alias for older callers."""
-        return self.tail_read()
-
     def filter_by_severity(self, alert: Alert) -> bool:
         """
         Decide whether an alert should proceed to LLM enrichment.
@@ -216,25 +212,13 @@ class PythonMiddleware:
             old_id = self._seen_order.popleft()
             self._seen_ids.discard(old_id)
 
-    def filterBySeverity(self, alert: Alert) -> bool:
-        """Backward-compatible alias for older callers."""
-        return self.filter_by_severity(alert)
-
     def build_prompt(self, alert: Alert) -> str:
         """Delegate to OllamaService for prompt construction."""
         return OllamaService._build_prompt(alert)
 
-    def buildPrompt(self, alert: Alert) -> str:
-        """Backward-compatible alias for older callers."""
-        return self.build_prompt(alert)
-
     def call_ollama(self, alert: Alert) -> EnrichedAlert:
         """Synchronous single-alert enrichment. Mainly useful for testing."""
         return self._ollama.enrich_alert(alert)
-
-    def callOllama(self, alert: Alert) -> EnrichedAlert:
-        """Backward-compatible alias for older callers."""
-        return self.call_ollama(alert)
 
     def _dispatch(self, enriched: EnrichedAlert) -> None:
         """Print, save, and notify for one enriched alert."""
@@ -264,15 +248,15 @@ class PythonMiddleware:
             if not self._pending_batch:
                 return
 
-            batch = self._pending_batch.copy()
-            self._pending_batch.clear()
+            batch = self._pending_batch
+            self._pending_batch = []
             self._last_flush = time.monotonic()
 
-            log.info(f"Flushing {len(batch)} alert(s) to Ollama")
-            enriched_list = await self._ollama.async_enrich_batch(batch)
+        log.info(f"Flushing {len(batch)} alert(s) to Ollama")
+        enriched_list = await self._ollama.async_enrich_batch(batch)
 
-            for enriched in enriched_list:
-                self._dispatch(enriched)
+        for enriched in enriched_list:
+            self._dispatch(enriched)
 
     async def run(self) -> None:
         """
@@ -318,6 +302,8 @@ class PythonMiddleware:
                 log.info("Shutdown signal — flushing remaining alerts")
                 await self._flush_batch()
                 self._close_alerts_file()
+                self._reporter.close()
+                self._ollama.close()
                 break
             except Exception as e:
                 log.error(f"Loop error: {e}", exc_info=True)

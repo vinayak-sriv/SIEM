@@ -53,6 +53,11 @@ ollama:
 output:
   report_dir: ../reports  # enriched .md + master alerts_enriched.jsonl
   write_markdown: true     # set false for high-volume replay; JSONL is always written
+  # Fresh-session report rotation is disabled for the previous behavior:
+  # keep old .md reports and append to alerts_enriched.jsonl across runs.
+  # To restore the new per-run clean reports feature, uncomment both lines:
+  # fresh_session_on_start: true       # archive old reports when main.py starts
+  # archive_previous_reports: true     # false deletes old reports instead of moving them
 
 # ── Notification Channels ──────────────────────────────────────────────────
 # SRS §4.3 Interoperability: "Wazuh supports Slack, PagerDuty integration"

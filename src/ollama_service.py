@@ -11,6 +11,7 @@ Compatibility notes:
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import re
@@ -94,6 +95,10 @@ class OllamaService:
         self._circuit_cooldown : int = ollama_cfg.get("circuit_breaker_cooldown_seconds", 45)
         self._failure_count    : int = 0
         self._circuit_open_until: float = 0.0
+        self._executor = ThreadPoolExecutor(
+            max_workers=max(1, self._max_concurrent),
+            thread_name_prefix="ollama-enrich",
+        )
         # Created lazily inside an async context — can't be instantiated at __init__ time.
         self._semaphore: Optional[asyncio.Semaphore] = None
 
@@ -233,11 +238,13 @@ class OllamaService:
     def _clean_section(text: str) -> str:
         """Trim common LLM formatting noise without destroying useful commands."""
         lines = [line.rstrip() for line in text.splitlines()]
-        while lines and not lines[0].strip():
-            lines.pop(0)
-        while lines and not lines[-1].strip():
-            lines.pop()
-        return "\n".join(lines)
+        start = 0
+        end = len(lines)
+        while start < end and not lines[start].strip():
+            start += 1
+        while end > start and not lines[end - 1].strip():
+            end -= 1
+        return "\n".join(lines[start:end])
 
     def parseResponse(self, raw_response: str) -> tuple[str, str, str]:
         """Backward-compatible alias for older callers."""
@@ -305,6 +312,10 @@ class OllamaService:
                 f"Ollama circuit opened for {self._circuit_cooldown}s "
                 f"after {self._failure_count} consecutive failure(s)"
             )
+
+    def close(self) -> None:
+        """Release worker threads used for blocking Ollama calls."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _fallback_enrichment(self, alert: Alert, error: Optional[Exception]) -> EnrichedAlert:
         """Create deterministic SOC guidance when the LLM is unavailable."""
@@ -421,7 +432,7 @@ Correlate the event with host logs, source IP reputation, and recent authenticat
         """
         async with self._get_semaphore():
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, self.enrich_alert, alert)
+            return await loop.run_in_executor(self._executor, self.enrich_alert, alert)
 
     async def async_enrich_batch(self, alerts: list) -> list:
         """

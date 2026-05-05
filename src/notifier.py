@@ -101,9 +101,9 @@ def _compile_routing_rules(routing_rules: list) -> list:
     return compiled
 
 
-def _render_html(enriched: EnrichedAlert, analyst: dict) -> str:
+def _render_html(enriched: EnrichedAlert, analyst: dict, d: Optional[dict] = None) -> str:
     """Build the HTML body for the alert email."""
-    d = enriched.to_dict()
+    d = d or enriched.to_dict()
     level = d["severityLevel"]
     label = d["severityLabel"]
 
@@ -235,7 +235,7 @@ class NotificationAgent:
         msg["From"]    = smtp["from_address"]
         msg["To"]      = analyst.get("email", smtp["from_address"])
         msg.attach(MIMEText(plain, "plain"))
-        msg.attach(MIMEText(_render_html(enriched, analyst), "html"))
+        msg.attach(MIMEText(_render_html(enriched, analyst, d), "html"))
 
         tls_context = ssl.create_default_context()
         with smtplib.SMTP(smtp["host"], smtp.get("port", 587), timeout=smtp.get("timeout_seconds", 15)) as s:

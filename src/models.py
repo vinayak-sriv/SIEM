@@ -37,10 +37,20 @@ _SEVERITY_ICONS = {
     "LOW":         "⚪",
 }
 
-def _severity_name(level: int) -> str:
-    for (lo, hi), label in _SEVERITY_MAP.items():
-        if lo <= level <= hi:
-            return label
+def _severity_name(level) -> str:
+    try:
+        numeric_level = int(level)
+    except (TypeError, ValueError):
+        return "UNKNOWN"
+        
+    if numeric_level >= 15:
+        return "CRITICAL"
+    if numeric_level >= 12:
+        return "HIGH"
+    if numeric_level >= 10:
+        return "MEDIUM-HIGH"
+    if numeric_level >= 0:
+        return "LOW"
     return "UNKNOWN"
 
 
@@ -82,8 +92,14 @@ def normalize_groups(value: object) -> list[str]:
     if isinstance(value, str):
         return [part.strip() for part in value.split(",") if part.strip()]
     if isinstance(value, (list, tuple, set)):
-        return [str(group).strip() for group in value if str(group).strip()]
-    return [str(value).strip()] if str(value).strip() else []
+        groups = []
+        for group in value:
+            item = str(group).strip()
+            if item:
+                groups.append(item)
+        return groups
+    item = str(value).strip()
+    return [item] if item else []
 
 
 def _as_dict(value: object) -> dict:
@@ -138,14 +154,14 @@ class Alert:
         ts_str = raw.get("timestamp", _utc_now_iso())
 
         # Fingerprint from high-signal alert fields so bursts do not collapse together.
-        fingerprint_src = json.dumps({
-            "rule_id"  : rule.get("id"),
-            "timestamp": ts_str,
-            "agent_id" : agent.get("id"),
-            "source_ip": data.get("srcip"),
-            "full_log" : raw.get("full_log", ""),
-        }, sort_keys=True)
-        alert_id = hashlib.sha256(fingerprint_src.encode()).hexdigest()
+        fingerprint_src = "\x1f".join(str(part if part is not None else "") for part in (
+            rule.get("id"),
+            ts_str,
+            agent.get("id"),
+            data.get("srcip"),
+            raw.get("full_log", ""),
+        ))
+        alert_id = hashlib.sha256(fingerprint_src.encode("utf-8", errors="replace")).hexdigest()
 
         try:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
@@ -222,6 +238,7 @@ class EnrichedAlert:
     impact        : str
     remediation   : str
     generatedAt   : str = field(default_factory=_utc_now_iso)
+    _dict_cache   : dict = field(default_factory=dict, init=False, repr=False)
 
     def display(self) -> None:
         """Print a formatted summary to stdout."""
@@ -269,11 +286,13 @@ class EnrichedAlert:
         """Backward-compatible alias for older callers."""
         return self.log_to_file(report_dir=report_dir)
 
-    def to_dict(self) -> dict:
-        """Serialize to a flat dict suitable for JSONL logging or notification payloads."""
+    def _payload_dict(self) -> dict:
+        """Build the flat alert payload once; callers treat it as read-only."""
+        if self._dict_cache:
+            return self._dict_cache
         rule = _as_dict(self.originalAlert.raw.get("rule", {}))
         agent = _as_dict(self.originalAlert.raw.get("agent", {}))
-        return {
+        self._dict_cache = {
             "alertId"      : self.originalAlert.alertId,
             "generatedAt"  : self.generatedAt,
             "severityLevel": self.originalAlert.level,
@@ -290,9 +309,14 @@ class EnrichedAlert:
             "impact"       : self.impact,
             "remediation"  : self.remediation,
         }
+        return self._dict_cache
+
+    def to_dict(self) -> dict:
+        """Serialize to a flat dict suitable for JSONL logging or notification payloads."""
+        return dict(self._payload_dict())
 
     def _render_markdown(self) -> str:
-        d = self.to_dict()
+        d = self._payload_dict()
         groups = ", ".join(str(group) for group in d["groups"])
         return f"""# {d['severityLabel']} — SIEM Enriched Alert
 

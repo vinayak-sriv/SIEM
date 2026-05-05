@@ -15,6 +15,7 @@ from middleware import PythonMiddleware
 from models import Alert
 from notifier import _validate_webhook_url
 from ollama_service import LLMParseError, OllamaService
+from report_logger import ReportLogger
 
 WORKSPACE_TMP = Path(__file__).resolve().parents[1]
 
@@ -129,6 +130,25 @@ class CoreHardeningTests(unittest.TestCase):
         service = OllamaService(config("alerts.json", "reports"))
         with self.assertRaises(LLMParseError):
             service.parse_response('{"response": ""}')
+
+    def test_report_logger_keeps_previous_reports_on_start(self):
+        with workspace_tempdir() as tmp_path:
+            reports_dir = tmp_path / "reports"
+            reports_dir.mkdir()
+            (reports_dir / "alerts_enriched.jsonl").write_text('{"old": true}\n', encoding="utf-8")
+            (reports_dir / "alert_old_rule5763_deadbeef.md").write_text("old report", encoding="utf-8")
+
+            cfg = config("alerts.json", reports_dir)
+            # Fresh-session report rotation is intentionally disabled while
+            # the project uses the previous append-in-place report behavior.
+            # To restore rotation, re-enable the ReportLogger block and update
+            # this test to expect reports/archive/session_*.
+
+            ReportLogger(cfg)
+
+            self.assertEqual('{"old": true}\n', (reports_dir / "alerts_enriched.jsonl").read_text(encoding="utf-8"))
+            self.assertTrue((reports_dir / "alert_old_rule5763_deadbeef.md").exists())
+            self.assertFalse((reports_dir / "archive").exists())
 
 
 if __name__ == "__main__":
