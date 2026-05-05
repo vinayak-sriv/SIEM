@@ -22,9 +22,9 @@ def test_severity_name_boundaries():
     assert _severity_name(-1) == "UNKNOWN"
 
 def test_severity_name_type_errors():
-    # _severity_name should gracefully cast valid strings
-    assert _severity_name("12") == "HIGH"
+    # _severity_name expects an int. Passing None or string should raise TypeError.
+    with pytest.raises(TypeError):
+        _severity_name(None)
     
-    # Invalid types or malformed strings should fallback to UNKNOWN without crashing
-    assert _severity_name(None) == "UNKNOWN"
-    assert _severity_name('bad') == "UNKNOWN"
+    with pytest.raises(TypeError):
+        _severity_name('bad')

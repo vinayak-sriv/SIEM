@@ -37,19 +37,14 @@ _SEVERITY_ICONS = {
     "LOW":         "⚪",
 }
 
-def _severity_name(level) -> str:
-    try:
-        numeric_level = int(level)
-    except (TypeError, ValueError):
-        return "UNKNOWN"
-        
-    if numeric_level >= 15:
+def _severity_name(level: int) -> str:
+    if level >= 15:
         return "CRITICAL"
-    if numeric_level >= 12:
+    if level >= 12:
         return "HIGH"
-    if numeric_level >= 10:
+    if level >= 10:
         return "MEDIUM-HIGH"
-    if numeric_level >= 0:
+    if level >= 0:
         return "LOW"
     return "UNKNOWN"
 
