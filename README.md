@@ -1,4 +1,4 @@
-# AI-Enhanced SIEM — Local Alert Enrichment with Wazuh and Ollama
+# AI-Enhanced SIEM 
 
 > Wazuh tells you *what* happened. This tells you *what it means* — using a local LLM, with no data leaving your network.
 
